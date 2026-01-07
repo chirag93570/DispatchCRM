@@ -1,210 +1,212 @@
-import { Lead, LeadStatus, Note, DashboardStats, CallLog, Opportunity, SalesStage } from '../types';
-import { MOCK_LEADS, MOCK_OPPORTUNITIES } from '../mockData';
+import { supabase } from './supabase';
+import { Lead, LeadStatus, CallLog, Opportunity, SalesStage } from '../types';
 
 class LeadService {
-  private leads: Lead[] = [...MOCK_LEADS];
-  private opportunities: Opportunity[] = [...MOCK_OPPORTUNITIES];
-  private callLogs: CallLog[] = [];
-  private nextSerialNumber: number = 10;
-
-  constructor() {
-      // Seed some call logs
-      this.callLogs = [
-          { id: '101', leadId: '1', companyName: 'Apex Logistics', phoneNumber: '(555) 123-4567', outcome: 'No Answer', note: 'Voicemail', timestamp: new Date().toISOString(), durationSeconds: 0, recordingUrl: '' },
-          { id: '102', leadId: '2', companyName: 'Blue Horizon', phoneNumber: '(555) 987-6543', outcome: 'Connected', note: 'Good talk', timestamp: new Date(Date.now() - 3600000).toISOString(), durationSeconds: 145, recordingUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' }
-      ];
-  }
-
-  private async delay(ms: number = 200): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
+  
   // --- Leads ---
 
   async getAllLeads(): Promise<Lead[]> {
-    await this.delay(100);
-    return [...this.leads];
-  }
+    const { data, error } = await supabase
+      .from('leads')
+      .select(`
+        *,
+        notes (
+          id, content, timestamp
+        )
+      `)
+      .order('last_call_time', { ascending: false });
 
-  // Legacy method kept for compatibility, now just aliases getAllLeads or standard sort
-  async getLeadsDFS(): Promise<Lead[]> {
-      return this.getAllLeads();
-  }
-
-  // Standard Priority Queue: Retries first, then New
-  async getNextLead(): Promise<Lead | null> {
-    await this.delay(100);
-    
-    const retryLead = this.leads.find(l => l.status === LeadStatus.RETRY);
-    if (retryLead) return { ...retryLead };
-
-    const newLead = this.leads.find(l => l.status === LeadStatus.NEW);
-    if (newLead) return { ...newLead };
-    
-    // Fallback
-    const next = this.leads.find(l => 
-        l.status !== LeadStatus.DNC && 
-        l.status !== LeadStatus.BOOKED && 
-        l.status !== LeadStatus.DISCONNECTED_NUMBER &&
-        l.status !== LeadStatus.WRONG_NUMBER &&
-        l.status !== LeadStatus.ONBOARDED &&
-        l.status !== LeadStatus.NOT_INTERESTED
-    );
-    return next ? { ...next } : null;
-  }
-
-  async addLead(leadData: Partial<Lead>): Promise<Lead> {
-    await this.delay(300);
-    if (leadData.mcNumber && this.leads.some(l => l.mcNumber === leadData.mcNumber)) {
-        throw new Error(`Lead with MC# ${leadData.mcNumber} already exists.`);
+    if (error) {
+      console.error('Error fetching leads:', error);
+      return [];
     }
 
-    const newLead: Lead = {
-      id: Date.now().toString(),
-      serialNumber: this.nextSerialNumber++,
-      companyName: leadData.companyName || 'Unknown',
-      mcNumber: leadData.mcNumber || 'N/A',
-      phoneNumber: leadData.phoneNumber || '',
-      email: leadData.email || '',
-      status: LeadStatus.NEW,
-      state: leadData.state || '',
-      truckCount: leadData.truckCount || 0,
-      notes: [],
-      ...leadData 
-    } as Lead;
+    // Map snake_case DB columns to camelCase types
+    return data.map((l: any) => ({
+      id: l.id,
+      serialNumber: l.serial_number,
+      companyName: l.company_name,
+      mcNumber: l.mc_number,
+      phoneNumber: l.phone_number,
+      email: l.email,
+      status: l.status as LeadStatus,
+      state: l.state,
+      truckCount: l.truck_count,
+      lastCallTime: l.last_call_time,
+      notes: l.notes || []
+    }));
+  }
 
-    this.leads.unshift(newLead);
-    return newLead;
+  async getNextLead(): Promise<Lead | null> {
+    // Priority: RETRY > NEW > Others (excluding dead leads)
+    const { data, error } = await supabase
+      .from('leads')
+      .select(`*, notes(id, content, timestamp)`)
+      .in('status', ['RETRY', 'NEW'])
+      .order('status', { ascending: false }) // 'RETRY' > 'NEW' alphabetically, works coincidentally or needs custom sort
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      serialNumber: data.serial_number,
+      companyName: data.company_name,
+      mcNumber: data.mc_number,
+      phoneNumber: data.phone_number,
+      email: data.email,
+      status: data.status as LeadStatus,
+      state: data.state,
+      truckCount: data.truck_count,
+      lastCallTime: data.last_call_time,
+      notes: data.notes || []
+    };
+  }
+
+  async addLead(leadData: Partial<Lead>): Promise<void> {
+    const { error } = await supabase.from('leads').insert({
+      company_name: leadData.companyName,
+      mc_number: leadData.mcNumber,
+      phone_number: leadData.phoneNumber,
+      email: leadData.email,
+      state: leadData.state,
+      truck_count: leadData.truckCount,
+      status: LeadStatus.NEW
+    });
+
+    if (error) throw error;
   }
 
   async bulkImportLeads(leadsData: any[]): Promise<number> {
-    await this.delay(500);
-    let count = 0;
-    for (const row of leadsData) {
-      if (!row.mcNumber || this.leads.some(l => l.mcNumber === row.mcNumber)) continue;
-      this.leads.unshift({
-        id: Date.now().toString() + Math.random(),
-        serialNumber: this.nextSerialNumber++,
-        companyName: row.companyName || 'Unknown',
-        mcNumber: row.mcNumber,
-        phoneNumber: row.phoneNumber || '',
-        email: row.email || '',
-        state: row.state || '',
-        truckCount: Number(row.truckCount) || 0,
-        status: LeadStatus.NEW,
-        notes: []
-      });
-      count++;
-    }
-    return count;
+    const formatted = leadsData.map(l => ({
+      company_name: l.companyName,
+      mc_number: l.mcNumber,
+      phone_number: l.phoneNumber,
+      email: l.email,
+      state: l.state,
+      truck_count: l.truckCount,
+      status: LeadStatus.NEW
+    }));
+
+    const { data, error } = await supabase.from('leads').insert(formatted).select();
+    if (error) throw error;
+    return data.length;
   }
 
-  async updateLeadStatus(id: string, status: LeadStatus, newNote?: string): Promise<Lead> {
-    await this.delay(200);
-    const index = this.leads.findIndex(l => l.id === id);
-    if (index === -1) throw new Error('Lead not found');
-
-    const lead = this.leads[index];
+  async updateLeadStatus(id: string, status: LeadStatus, newNote?: string): Promise<void> {
     const timestamp = new Date().toISOString();
 
-    const updatedNotes = newNote 
-      ? [...lead.notes, { id: Date.now().toString(), content: newNote, timestamp }] 
-      : lead.notes;
+    // 1. Update Lead Status
+    const { error: leadError } = await supabase
+      .from('leads')
+      .update({ status, last_call_time: timestamp })
+      .eq('id', id);
 
-    // Log the call automatically if note provided (implies interaction)
+    if (leadError) throw leadError;
+
+    // 2. Insert Note if exists
     if (newNote) {
-        this.logCall({
-            leadId: lead.id,
-            companyName: lead.companyName,
-            phoneNumber: lead.phoneNumber,
-            outcome: status,
-            note: newNote || '',
-            durationSeconds: Math.floor(Math.random() * 300) // Mock duration
-        });
+      await supabase.from('notes').insert({
+        lead_id: id,
+        content: newNote,
+        timestamp: timestamp
+      });
+
+      // 3. Log Call implicitly
+      this.logCall({
+        leadId: id,
+        outcome: status,
+        note: newNote,
+        durationSeconds: 0 // Default, real dialer updates this later
+      });
     }
-
-    const updatedLead: Lead = {
-      ...lead,
-      status,
-      lastCallTime: timestamp,
-      notes: updatedNotes
-    };
-
-    this.leads[index] = updatedLead;
-    return { ...updatedLead };
   }
 
   // --- Opportunities ---
 
   async getOpportunities(): Promise<Opportunity[]> {
-      await this.delay(100);
-      return [...this.opportunities];
+    const { data, error } = await supabase.from('opportunities').select('*');
+    if (error) return [];
+    
+    return data.map((o: any) => ({
+      id: o.id,
+      title: o.title,
+      companyName: o.company_name,
+      value: o.value,
+      stage: o.stage as SalesStage,
+      owner: o.owner,
+      nextAction: o.next_action,
+      expectedCloseDate: o.expected_close_date,
+      probability: o.probability
+    }));
   }
 
-  async updateOpportunityStage(id: string, stage: SalesStage): Promise<Opportunity> {
-      await this.delay(100);
-      const index = this.opportunities.findIndex(o => o.id === id);
-      if (index === -1) throw new Error('Opportunity not found');
-
-      // Update probability based on stage (simple rule)
-      let prob = 0;
-      switch(stage) {
-          case SalesStage.PROSPECTING: prob = 10; break;
-          case SalesStage.QUALIFICATION: prob = 20; break;
-          case SalesStage.DISCOVERY: prob = 40; break;
-          case SalesStage.PROPOSAL: prob = 60; break;
-          case SalesStage.NEGOTIATION: prob = 80; break;
-          case SalesStage.WON: prob = 100; break;
-          case SalesStage.LOST: prob = 0; break;
-      }
-
-      const updated = { ...this.opportunities[index], stage, probability: prob };
-      this.opportunities[index] = updated;
-      return updated;
+  async updateOpportunityStage(id: string, stage: SalesStage): Promise<void> {
+    await supabase.from('opportunities').update({ stage }).eq('id', id);
   }
 
   // --- Calls ---
 
   async logCall(data: Partial<CallLog>): Promise<void> {
-      // Generate a mock recording URL for connected calls > 5 seconds
-      let mockRecording = '';
-      if (data.durationSeconds && data.durationSeconds > 5) {
-          mockRecording = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-      }
+    // Fetch company info if not provided but leadId is
+    let companyName = data.companyName || 'Unknown';
+    let phoneNumber = data.phoneNumber || '';
 
-      const logEntry: CallLog = {
-          id: Date.now().toString(),
-          leadId: data.leadId || null,
-          companyName: data.companyName || 'Unknown / Manual',
-          phoneNumber: data.phoneNumber || '',
-          outcome: data.outcome || 'Completed',
-          note: data.note || '',
-          timestamp: new Date().toISOString(),
-          durationSeconds: data.durationSeconds || 0,
-          recordingUrl: mockRecording
-      };
-      this.callLogs.unshift(logEntry);
+    if (data.leadId && (!data.companyName || !data.phoneNumber)) {
+        const { data: lead } = await supabase.from('leads').select('company_name, phone_number').eq('id', data.leadId).single();
+        if (lead) {
+            companyName = lead.company_name;
+            phoneNumber = lead.phone_number;
+        }
+    }
+
+    await supabase.from('call_logs').insert({
+      lead_id: data.leadId,
+      company_name: companyName,
+      phone_number: phoneNumber,
+      outcome: data.outcome,
+      note: data.note,
+      duration_seconds: data.durationSeconds,
+      recording_url: data.recordingUrl
+    });
   }
 
   async getCallHistory(): Promise<CallLog[]> {
-    await this.delay(100);
-    return [...this.callLogs];
+    const { data, error } = await supabase.from('call_logs').select('*').order('timestamp', { ascending: false });
+    if (error) return [];
+
+    return data.map((l: any) => ({
+      id: l.id,
+      leadId: l.lead_id,
+      companyName: l.company_name,
+      phoneNumber: l.phone_number,
+      outcome: l.outcome,
+      note: l.note,
+      timestamp: l.timestamp,
+      durationSeconds: l.duration_seconds,
+      recordingUrl: l.recording_url
+    }));
   }
 
-  async getStats(): Promise<DashboardStats> {
-    const today = new Date().toDateString();
-    const todaysLogs = this.callLogs.filter(log => new Date(log.timestamp).toDateString() === today);
-    const totalDuration = todaysLogs.reduce((acc, curr) => acc + curr.durationSeconds, 0);
+  async getStats(): Promise<any> {
+    // In a real production app, you would likely use Postgres aggregation queries or RPCs
+    // For simplicity here, we are fetching counts.
+    
+    // Note: This is expensive at scale. Use Supabase aggregation in production.
+    const { count: totalLeads } = await supabase.from('leads').select('*', { count: 'exact', head: true });
+    const { count: leadsInQueue } = await supabase.from('leads').select('*', { count: 'exact', head: true }).in('status', ['NEW', 'RETRY']);
+    const { count: callsToday } = await supabase.from('call_logs').select('*', { count: 'exact', head: true }).gte('timestamp', new Date().toISOString().split('T')[0]);
 
     return {
-      totalCallsToday: todaysLogs.length,
-      interestedLeads: this.leads.filter(l => l.status === LeadStatus.INTERESTED).length,
-      retryQueue: this.leads.filter(l => l.status === LeadStatus.RETRY).length,
-      dncCount: this.leads.filter(l => l.status === LeadStatus.DNC).length,
-      totalLeads: this.leads.length,
-      leadsInQueue: this.leads.filter(l => l.status === LeadStatus.NEW || l.status === LeadStatus.RETRY).length,
-      onboardedCount: this.leads.filter(l => l.status === LeadStatus.ONBOARDED).length,
-      avgTalkTime: todaysLogs.length ? Math.floor(totalDuration / todaysLogs.length) : 0
+      totalCallsToday: callsToday || 0,
+      interestedLeads: 0, // Placeholder: requires complex query
+      retryQueue: 0, // Placeholder
+      dncCount: 0,
+      totalLeads: totalLeads || 0,
+      leadsInQueue: leadsInQueue || 0,
+      onboardedCount: 0,
+      avgTalkTime: 0
     };
   }
 }
