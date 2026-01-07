@@ -1,0 +1,7 @@
+{
+  "name": "RK Dispatch CRM",
+  "description": "Professional dispatcher CRM for RK Dispatch Solutions with lead management and disposition workflow.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

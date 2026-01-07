@@ -1,0 +1,158 @@
+import { Lead, LeadStatus, Opportunity, SalesStage } from './types';
+
+export const MOCK_LEADS: Lead[] = [
+  {
+    id: '1',
+    serialNumber: 1,
+    companyName: 'Apex Logistics LLC',
+    mcNumber: 'MC-123456',
+    phoneNumber: '(555) 123-4567',
+    email: 'dispatch@apexlogistics.com',
+    status: LeadStatus.NEW,
+    state: 'TX',
+    truckCount: 5,
+    notes: [],
+  },
+  {
+    id: '2',
+    serialNumber: 2,
+    companyName: 'Blue Horizon Transport',
+    mcNumber: 'MC-987654',
+    phoneNumber: '(555) 987-6543',
+    email: 'ops@bluehorizon.com',
+    status: LeadStatus.RETRY,
+    state: 'CA',
+    truckCount: 12,
+    lastCallTime: new Date(Date.now() - 86400000).toISOString(),
+    notes: [
+      { id: 'n1', content: 'Voicemail left. Call back tomorrow.', timestamp: new Date(Date.now() - 86400000).toISOString() }
+    ],
+  },
+  {
+    id: '3',
+    serialNumber: 3,
+    companyName: 'Swift Mile Carriers',
+    mcNumber: 'MC-456789',
+    phoneNumber: '(555) 456-7890',
+    email: 'info@swiftmile.com',
+    status: LeadStatus.NEW,
+    state: 'FL',
+    truckCount: 3,
+    notes: [],
+  },
+  {
+    id: '4',
+    serialNumber: 4,
+    companyName: 'Iron Horse Freight',
+    mcNumber: 'MC-246813',
+    phoneNumber: '(555) 246-8135',
+    email: 'disp@ironhorse.com',
+    status: LeadStatus.INTERESTED,
+    state: 'NY',
+    truckCount: 8,
+    lastCallTime: new Date().toISOString(),
+    notes: [
+      { id: 'n2', content: 'Interested in flatbed loads. Send rate sheet.', timestamp: new Date().toISOString() }
+    ],
+  },
+  {
+    id: '5',
+    serialNumber: 5,
+    companyName: 'Lone Star Trucking',
+    mcNumber: 'MC-135792',
+    phoneNumber: '(555) 135-7924',
+    email: 'owner@lonestar.com',
+    status: LeadStatus.DNC,
+    state: 'TX',
+    truckCount: 1,
+    lastCallTime: new Date().toISOString(),
+    notes: [
+      { id: 'n3', content: 'Requested removal from list.', timestamp: new Date().toISOString() }
+    ],
+  },
+  {
+    id: '6',
+    serialNumber: 6,
+    companyName: 'Great Lakes Haulers',
+    mcNumber: 'MC-112233',
+    phoneNumber: '(555) 111-2233',
+    email: 'dispatch@glh.com',
+    status: LeadStatus.NEW,
+    state: 'MI',
+    truckCount: 4,
+    notes: [],
+  },
+  {
+    id: '7',
+    serialNumber: 7,
+    companyName: 'Mountain Top Express',
+    mcNumber: 'MC-445566',
+    phoneNumber: '(555) 444-5566',
+    email: 'mtn@express.com',
+    status: LeadStatus.NEW,
+    state: 'CO',
+    truckCount: 2,
+    notes: [],
+  },
+  {
+    id: '8',
+    serialNumber: 8,
+    companyName: 'Red River Trans',
+    mcNumber: 'MC-778899',
+    phoneNumber: '(555) 777-8899',
+    email: 'ops@redriver.com',
+    status: LeadStatus.NEW,
+    state: 'OK',
+    truckCount: 6,
+    notes: [],
+  },
+  {
+    id: '9',
+    serialNumber: 9,
+    companyName: 'Urban Cargo Solutions',
+    mcNumber: 'MC-998877',
+    phoneNumber: '(555) 999-8877',
+    email: 'hello@urbancargo.com',
+    status: LeadStatus.RETRY,
+    state: 'IL',
+    truckCount: 10,
+    lastCallTime: new Date(Date.now() - 10000000).toISOString(),
+    notes: [{ id: 'n4', content: 'Busy signal.', timestamp: new Date(Date.now() - 10000000).toISOString() }],
+  }
+];
+
+export const MOCK_OPPORTUNITIES: Opportunity[] = [
+    {
+        id: 'o1',
+        title: 'Q4 Logistics Contract',
+        companyName: 'Apex Logistics LLC',
+        value: 12500,
+        stage: SalesStage.QUALIFICATION,
+        owner: 'Chirag Sharma',
+        nextAction: 'Schedule Qualification Call',
+        expectedCloseDate: '2024-11-15',
+        probability: 20
+    },
+    {
+        id: 'o2',
+        title: 'Dedicated Lane - TX to CA',
+        companyName: 'Blue Horizon Transport',
+        value: 45000,
+        stage: SalesStage.PROPOSAL,
+        owner: 'Chirag Sharma',
+        nextAction: 'Send Rate Confirmation',
+        expectedCloseDate: '2024-10-30',
+        probability: 60
+    },
+    {
+        id: 'o3',
+        title: 'Spot Market Fleet',
+        companyName: 'Iron Horse Freight',
+        value: 8000,
+        stage: SalesStage.DISCOVERY,
+        owner: 'Chirag Sharma',
+        nextAction: 'Demo Dispatch Portal',
+        expectedCloseDate: '2024-12-01',
+        probability: 40
+    }
+];
