@@ -1,0 +1,7 @@
+tunnel: e6e182da-5eaf-452f-8101-ebdcacb51b39
+credentials-file: D:\rk-dispatch-crm\credentials.json
+
+ingress:
+  - hostname: crm.rkdispatch.com
+    service: http://localhost:8081
+  - service: http_status:404
